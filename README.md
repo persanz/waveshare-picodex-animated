@@ -1,4 +1,9 @@
-# Waveshare PICODEX
+# Waveshare PICODEX Animated
+
+Experimental animated-sprite version of [Waveshare PICODEX](https://github.com/persanz/waveshare-picodex).
+Pikachu has a 58-frame animation; other Pokémon retain static artwork.
+Current measured playback is about **2.1 fps**, so this is a feasibility prototype.
+
 
 A standalone, offline Pokémon picture book for the **Waveshare
 RP2350-Touch-LCD-1.54**, running MicroPython 1.29. A Pokémon logo and Poké Ball splash shows `Loading....` for five seconds,
@@ -26,9 +31,12 @@ state or care meters. The startup splash leads straight into PICODEX.
 
 ## Files and setup
 
-This is a separate project derived from
-[persanz/waveshare-pokemon-frame](https://github.com/persanz/waveshare-pokemon-frame),
-commit `75f1b3cf5468c2704ef5b6ba3272d236e745763c`. The source project remains unchanged.
+This repository was separated from the `feature/pikachu-animation` experiment in
+[persanz/waveshare-picodex](https://github.com/persanz/waveshare-picodex) at commit
+`2960718`. Its full development history is preserved here. The stable static
+project remains in that original repository. Both derive from
+[persanz/waveshare-pokemon-frame](https://github.com/persanz/waveshare-pokemon-frame)
+at `75f1b3c`.
 
 Use MicroPython **1.29, mpy format v6.3**. The board must have a FAT-formatted
 microSD card. Place the included `pokemon_hd.dat` on the card at:
@@ -37,6 +45,7 @@ microSD card. Place the included `pokemon_hd.dat` on the card at:
 /waveshare_pokemon_frame/pokemon_hd.dat
 ```
 
+Also put `pikachu_animation.dat` in `/waveshare_pokemon_frame/` on the SD card.
 The original folder name is retained so an existing artwork SD card can be
 reused unchanged. The firmware mounts it at `/sd`.
 
@@ -49,6 +58,7 @@ boot_splash.dat
 lcd.mpy
 frame_app.mpy
 dex_description.mpy
+pikachu_animation.mpy
 shutdown_screen.mpy
 sdcard.mpy
 pokemon_order.bin
@@ -76,7 +86,7 @@ new `main.py`; they do not need to be deleted to run this version.
 The matching `.mpy` firmware modules are included. Rebuild on the host with:
 
 ```sh
-for module in boot_splash lcd frame_app dex_description shutdown_screen sdcard; do
+for module in boot_splash lcd frame_app dex_description pikachu_animation shutdown_screen sdcard; do
   uv tool run --from mpy-cross mpy-cross "$module.py"
 done
 python3 -m unittest discover -s tests -v
@@ -141,8 +151,7 @@ trademarks belong to their respective owners.
 
 ## Pikachu animation prototype
 
-On `feature/pikachu-animation`, Pikachu (#25) uses an optional 58-frame pixel
-animation. Other entries retain static artwork. Playback pauses during a centre
+Pikachu (#25) uses an optional 58-frame pixel animation. Other entries retain static artwork. Playback pauses during a centre
 hold and while reading descriptions; returning restores the held frame before
 animation resumes. A missing/invalid animation keeps Pikachu static.
 
@@ -174,4 +183,5 @@ and restoring the held frame before resuming. The measured integrated rate was
 approximately **2.1 frames/second**, below the GIF's intended 5–10 fps; playback
 is a feasibility test, not yet smooth game-speed animation. Minimum free heap
 in the instrumented test was 3,664 bytes. Six host tests passed. The static
-artwork archive is unchanged. The experiment is kept on a feature branch.
+artwork archive is unchanged. The experiment is maintained in this separate repository, independently of the
+stable static PICODEX project.
