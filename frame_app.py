@@ -46,7 +46,6 @@ def start(lcd, power, button, initial_index=0):
 
 
     animation = None
-    animation_failed = False
 
     current_art_id = 0
     current_name = ''
@@ -69,14 +68,14 @@ def start(lcd, power, button, initial_index=0):
         description_open = False
         os.remove('/picodex-return.tmp')
 
-    def show_sprite(index):
-        nonlocal current_art_id, current_name, description_open, animation, animation_failed
+    def show_sprite(index, static_only=False):
+        nonlocal current_art_id, current_name, description_open, animation
         if animation is not None:
             animation.close()
             animation = None
         import sys
-        if 'pikachu_animation' in sys.modules:
-            del sys.modules['pikachu_animation']
+        if 'pokemon_animation' in sys.modules:
+            del sys.modules['pokemon_animation']
         # Release description-rendering garbage before allocating the decoder.
         import gc
         gc.collect()
@@ -88,20 +87,33 @@ def start(lcd, power, button, initial_index=0):
             f.seek(4 + index * 16)
             number, offset, size, name_offset = struct.unpack('<IIII', f.read(16))
             current_art_id = number
-            f.seek(offset)
-            stream = deflate.DeflateIO(f, deflate.RAW, 10)
-            lcd.fill(0)
-            screen = memoryview(lcd.buffer)
-            source = bytearray(W * 2)
-            for row in range(W):
-                if row % 24 == 0:
-                    gc.collect()
-                if stream.readinto(source) != W * 2:
-                    raise OSError('Incomplete sprite')
-                start = row * W * 2
-                screen[start:start + W * 2] = source
             name = read_name(f, name_offset).upper()
             current_name = name
+            if not static_only:
+                try:
+                    from pokemon_animation import Player
+                    animation = Player(lcd, index)
+                    del Player
+                except (OSError, ValueError, MemoryError) as e:
+                    animation = None
+                    if 'pokemon_animation' in sys.modules:
+                        del sys.modules['pokemon_animation']
+                    gc.collect()
+                    print('Animation unavailable; using artwork:', e)
+            lcd.fill(0)
+            if animation is None:
+                f.seek(offset)
+                stream = deflate.DeflateIO(f, deflate.RAW, 10)
+                screen = memoryview(lcd.buffer)
+                source = bytearray(W*2)
+                for row in range(W):
+                    if row % 24 == 0:
+                        gc.collect()
+                    if stream.readinto(source) != W*2:
+                        raise OSError('Incomplete sprite')
+                    start = row*W*2
+                    screen[start:start+W*2] = source
+                del stream, screen, source
             # Draw a footer band with the Pokémon number (white) before the name (orange).
             lcd.fill_rect(0, 216, 240, 24, BLACK)
             # Form IDs above 10000 are PokeAPI identifiers, not Pokédex numbers.
@@ -140,18 +152,10 @@ def start(lcd, power, button, initial_index=0):
             else:
                 lcd.text(num_label, (240 - len(num_label)*8)//2, 224, WHITE)
             lcd.show()
-        del stream, screen, source
         description_open = False
         print('Displaying Pokemon', number, name)
-        if current_art_id == 25 and not animation_failed:
-            try:
-                gc.collect()
-                from pikachu_animation import Player
-                animation = Player(lcd)
-                print('Pikachu animation ready:', animation.count, 'frames')
-            except (OSError, ValueError, MemoryError) as e:
-                animation_failed = True
-                print('Pikachu stays static:', e)
+        if animation is not None:
+            print('Animation ready:', animation.count, 'frames')
 
 
     try:
@@ -368,8 +372,7 @@ def start(lcd, power, button, initial_index=0):
                     animation.step(now)
                 except (OSError, ValueError, MemoryError) as e:
                     print('Animation error; using static artwork:', e)
-                    animation_failed = True
-                    show_sprite(index)
+                    show_sprite(index, static_only=True)
 
             # Sustained movement chooses a different random artwork entry.
             # One change per shake; re-arm after half a second of calm.

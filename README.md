@@ -1,55 +1,37 @@
 # Waveshare PICODEX Animated
 
-Experimental animated-sprite version of [Waveshare PICODEX](https://github.com/persanz/waveshare-picodex).
-Pikachu has a 58-frame animation; other Pokémon retain static artwork.
-Current measured playback is about **2.1 fps**, so this is a feasibility prototype.
+An offline animated Pokémon catalog for the **Waveshare RP2350-Touch-LCD-1.54**,
+running MicroPython 1.29 (mpy format v6.3). It shows a five-second Pokémon splash,
+then enters PICODEX directly, with no menu, companion game or charging indicator.
 
+**Every one of the 1,538 entries has animation data:**
 
-A standalone, offline Pokémon picture book for the **Waveshare
-RP2350-Touch-LCD-1.54**, running MicroPython 1.29. A Pokémon logo and Poké Ball splash shows `Loading....` for five seconds,
-then opens the first Pokémon: **no launcher, no app selection, no Virtual Pokemon**.
+- **1,396** use matching animated sprites from the pinned PokeAPI Showdown set.
+- **142** use gentle vertical movement of their own original artwork where a
+  matching animated sprite is absent or static. These do not invent new poses.
 
-Includes 1,538 high-resolution 240 × 240 artwork entries, Spanish descriptions,
-touch and button controls, motion shuffle and shutdown screen.
-There is no battery percentage display or automatic charging popup.
+The entry count, form names, national numbering and Spanish descriptions are
+preserved. Female and other alternate artwork entries are mapped individually;
+missing forms are not replaced by another form's sprite.
 
 ## Controls
 
-- **Left/right third of the screen:** previous/next Pokémon.
-- **Left/right hardware button, short press:** previous/next Pokémon.
-- **Hold the centre of the artwork for about one second:** read its description.
-- **Tap a description:** advance a page; tap the final page to return to the
-  exact same artwork. Movement pauses while reading.
-- **Hold the right button for two seconds:** return to the first Pokémon.
-- **Move gently:** choose a different random Pokémon. Let the device settle
-  before shaking again; continuous shaking does not repeatedly change it.
-- **Hold the left button for about two seconds:** show `GOODBYE!` and switch off
-  on battery. USB can keep the device powered after its screen goes black.
+- Tap the left/right third of the screen, or short-press the left/right button,
+  for the previous/next entry.
+- Hold the centre of the image for about one second to read its description.
+  Animation pauses while holding and reading. Tap through pages; the final tap
+  restores the held frame and resumes playback.
+- Hold the right button for two seconds to return to the first Pokémon.
+- Move gently to choose another entry. Let the device settle before shaking again.
+- Hold the left button for about two seconds to show `GOODBYE!` and switch off on
+  battery. USB can keep the board powered after the screen switches off.
 
-Power-on starts from the first entry. There is no menu to return to, no pet
-state or care meters. The startup splash leads straight into PICODEX.
+Normal startup begins at the first Pokémon. USB charging is handled by hardware;
+there is no battery percentage popup or charger-status logging.
 
-## Files and setup
+## Board and SD installation
 
-This repository was separated from the `feature/pikachu-animation` experiment in
-[persanz/waveshare-picodex](https://github.com/persanz/waveshare-picodex) at commit
-`2960718`. Its full development history is preserved here. The stable static
-project remains in that original repository. Both derive from
-[persanz/waveshare-pokemon-frame](https://github.com/persanz/waveshare-pokemon-frame)
-at `75f1b3c`.
-
-Use MicroPython **1.29, mpy format v6.3**. The board must have a FAT-formatted
-microSD card. Place the included `pokemon_hd.dat` on the card at:
-
-```text
-/waveshare_pokemon_frame/pokemon_hd.dat
-```
-
-Also put `pikachu_animation.dat` in `/waveshare_pokemon_frame/` on the SD card.
-The original folder name is retained so an existing artwork SD card can be
-reused unchanged. The firmware mounts it at `/sd`.
-
-Copy these files to the board root:
+Copy these files to the board root, staging and checking hashes before activation:
 
 ```text
 main.py
@@ -57,8 +39,8 @@ boot_splash.mpy
 boot_splash.dat
 lcd.mpy
 frame_app.mpy
+pokemon_animation.mpy
 dex_description.mpy
-pikachu_animation.mpy
 shutdown_screen.mpy
 sdcard.mpy
 pokemon_order.bin
@@ -66,122 +48,113 @@ pokemon_dex.bin
 pokemon_descriptions_es.bin
 ```
 
-The `lcd.py` source is the preserved Waveshare board driver from the original
-project's local board backup. Its compiled module is supplied too. An existing
-working `lcd.py` on the board can remain; the firmware uses its `LCD_1inch54` API.
-The artwork archive belongs on the SD card, not in the board's internal flash.
+An existing working Waveshare `lcd.py` may remain on the board. Its `.py` takes
+precedence over the supplied `.mpy`. The source driver and its compiled version
+are both included here for reproducibility.
 
-Find the port with `uv tool run mpremote connect list`. Back up the current board
-files before replacing them. A hardware reset clears an existing watchdog;
-interrupt startup before transferring large files. Stage files under temporary
-names and verify their SHA-256 checksums before renaming them to activate a set
-of changes. Activate `main.py` last, then reset the board.
+Put the following on a FAT microSD card (mounted as `/sd` by the app):
 
-This repository does not automatically install itself or remove files from an
-existing two-app board. The old launcher and companion modules are unused by the
-new `main.py`; they do not need to be deleted to run this version.
+```text
+/waveshare_pokemon_frame/pokemon_hd.dat
+/picodex_animations/pack-00.bin
+/picodex_animations/pack-01.bin
+...
+/picodex_animations/pack-12.bin
+```
 
-## Build and checks
+The old artwork path is retained to reuse an existing SD card. The 13 animation
+packs total **101,579,907 bytes (96.87 MiB)**. The original 30.7 MiB artwork archive
+is retained for entry metadata and recovery if an animation file is damaged or
+missing. With all packs installed, every entry animates normally. Source and
+output hashes, exact form mapping and generated-motion flags are in
+[`assets/animations/manifest.json`](assets/animations/manifest.json).
 
-The matching `.mpy` firmware modules are included. Rebuild on the host with:
+### Transfer over USB
+
+Use `uv tool run mpremote connect list` to find the port. Back up the device
+files before changing them. For long transfers, temporarily replace `main.py`
+with a tiny maintenance entry point that holds GPIO28 high but does not start
+a watchdog, then perform a hardware reset. This avoids watchdog resets during
+uploads. Keep the backed-up normal `main.py` for final activation.
+
+To transfer the animation packs to a board already in maintenance mode:
 
 ```sh
-for module in boot_splash lcd frame_app dex_description pikachu_animation shutdown_screen sdcard; do
+uv run --no-project --python 3.11 --with pyserial python tools/transfer_animations.py --port /dev/cu.usbmodem1101
+```
+
+This writes only named animation packs under `/sd/picodex_animations`, not other
+SD content. It stages files, checks received SHA-256, and preserves a prior
+version as `.previous` before activation. Existing matching packs are skipped.
+An interrupted pack remains staged and can be retried. Remove neither the card
+nor the cable during the transfer. A card reader can copy the same 13 files much
+faster than this board's current USB serial path.
+
+After uploading firmware, read back and verify the pack checksums, activate
+`main.py` last, then reset. A failed or incomplete animation falls back to the
+original artwork for that entry rather than freezing the whole catalog.
+
+## Building
+
+Compile the firmware with MicroPython 1.29 mpy-cross:
+
+```sh
+for module in boot_splash lcd frame_app pokemon_animation dex_description shutdown_screen sdcard; do
   uv tool run --from mpy-cross mpy-cross "$module.py"
 done
 python3 -m unittest discover -s tests -v
 python3 validate_assets.py
+python3 validate_animations.py
 ```
 
-`main.py` remains source. Allocate the 115,200-byte display buffer before loading
-the app; `gc.threshold(1024)` and compiled modules are important for heap space.
-The display uses byte-swapped RGB565 (for example red is `0x00f8`).
-
-Rebuild the Spanish binary database from its included JSON with:
+The animation source is pinned to PokeAPI/sprites commit
+`c0542f7c51215d9672439012838c99f520596cbd`. Download only the relevant GIFs:
 
 ```sh
-python3 build_descriptions.py
+mkdir -p .cache/animations
+git clone --filter=blob:none --sparse https://github.com/PokeAPI/sprites.git .cache/animations/upstream
+git -C .cache/animations/upstream checkout c0542f7c51215d9672439012838c99f520596cbd
+git -C .cache/animations/upstream sparse-checkout set --no-cone '/sprites/pokemon/other/showdown/*.gif' '/sprites/pokemon/other/showdown/female/*.gif'
+uv run --no-project --python 3.11 --with pillow --with numpy python build_animations.py
 ```
 
-The JSON retains per-entry translation provenance. Artwork archive format:
-32-bit entry count, then 16-byte entries `(art_id, offset, compressed_size,
-name_offset)`; bodies are raw DEFLATE with a 1 KiB window, yielding 115,200 bytes
-of RGB565 data. `pokemon_order.bin` maps National Pokédex order to archive indices;
-`pokemon_dex.bin` maps alternate-form IDs to displayed species numbers.
+The builder checks every source ID and label against the original artwork index,
+scales GIFs into at most 64 × 64 source pixels, and samples to at most 64 frames.
+Horizontal 3× scaling is done on the host; rows repeat vertically 3× on the board,
+producing sprites up to 192 × 192 pixels. Each frame is compressed independently
+with raw DEFLATE and a 512-byte window. The player streams one row at a time into
+the existing framebuffer. It does not load an entire animation or catalog into
+RAM and does not allocate a second 115,200-byte framebuffer.
 
-Hardware regression scripts in `tests/hardware_description_*.py` use simulated
-inputs with a real board, LCD and SD card. Compile and upload them as `.mpy`
-modules before importing them. Host tests do not substitute for physical touch,
-button, SD-card and power checks. The standalone firmware has been installed on the board. Simulated-input
-on-board checks passed for byte-identical description return and shutdown
-control flow despite failing touch reads. Physical power cutoff requires owner
-handling.
+`PKA3` animations are grouped into `PAX1` packs, with up to 128 indexed entries per
+pack. The runtime uses original artwork archive positions, keeping separate
+assets for entries sharing a species number. Pack offsets and sizes are bounded
+before playback. The byte-swapped RGB565 display convention is preserved.
 
-## Power and memory
+The SD driver continuously polls response bytes with the original 100 ms
+wall-clock deadline instead of sleeping 1 ms after each filler byte. This avoids
+artificial read latency without creating an unbounded wait. Actual frame rate
+still depends on the sprite, card and display; it is not guaranteed to match the
+source GIF. The older Pikachu prototype measured about 2.1 fps before this change.
 
-USB charging is handled by the board hardware. PICODEX does not display charge
-percentages, monitor the charger-status GPIO, or write startup battery logs.
-The left button still controls shutdown. USB can keep the board powered after
-the screen switches off.
+The heap is limited: preserve `gc.threshold(1024)`, compile modules, and allocate
+the LCD framebuffer before loading the application. Description return uses a
+flash-backed snapshot to avoid re-decoding artwork on a low heap. Power handling
+runs before touch rendering, and shared I2C reads have a 50 ms timeout.
 
-Description return restores a flash-backed artwork snapshot, avoiding the
-previous low-memory decompression failure. Power handling precedes touch
-rendering, and shared I2C reads have a 50 ms timeout.
-
-## Rebuild the startup splash
-
-The original splash assets and attribution are in `assets/splash/`. To rebuild:
-
-```sh
-uv run --with pillow --with resvg-py python build_boot_splash.py
-```
-
-The splash reuses the existing framebuffer and its module is unloaded before
-PICODEX imports, preserving heap space for artwork. Missing or incomplete
-splash data is logged and PICODEX still starts. On-board startup verification
-confirmed a 5,003 ms splash followed by the first artwork, with no menu.
+Rebuild the Spanish description binary with `python3 build_descriptions.py`.
+Rebuild the splash with
+`uv run --with pillow --with resvg-py python build_boot_splash.py`.
 
 ## Sources and rights
 
-Artwork and names originate from PokeAPI's official-artwork collection. Spanish
-text and translation provenance are retained from the source project. The SD
-and Waveshare display driver sources retain their existing notices. No new
-license grant is asserted over upstream material. Pokémon artwork, names and
-trademarks belong to their respective owners.
+This project preserves the development history of
+[persanz/waveshare-picodex](https://github.com/persanz/waveshare-picodex), originally
+based on [waveshare-pokemon-frame](https://github.com/persanz/waveshare-pokemon-frame).
+The static PICODEX repository remains separate.
 
-## Pikachu animation prototype
-
-Pikachu (#25) uses an optional 58-frame pixel animation. Other entries retain static artwork. Playback pauses during a centre
-hold and while reading descriptions; returning restores the held frame before
-animation resumes. A missing/invalid animation keeps Pikachu static.
-
-Rebuild the compact asset on the host:
-
-```sh
-uv run --no-project --python 3.11 --with pillow python build_pikachu_animation.py
-uv tool run --from mpy-cross mpy-cross pikachu_animation.py
-uv tool run --from mpy-cross mpy-cross frame_app.py
-```
-
-Upload `pikachu_animation.mpy` and the updated `frame_app.mpy` to the board root.
-Place `pikachu_animation.dat` on the SD at
-`/waveshare_pokemon_frame/pikachu_animation.dat`. Normal startup still begins
-with the first Pokémon; `frame_app.start(..., initial_index=37)` starts a
-one-session Pikachu demo for this archive/order. This does not persist a new
-startup selection.
-
-The asset is 47,253 bytes (about 46 KiB), with pre-expanded horizontal rows
-and independent raw-DEFLATE frames (512-byte window).
-The player repeats each row vertically into the existing framebuffer to display
-150 × 138 pixels, using one 300-byte row buffer plus decoder memory. It never buffers the entire
-animation or allocates another framebuffer. Firmware/code also consumes heap.
-The source GIF, blob hash and attribution are in `assets/animated/SOURCES.md`.
-See `tests/hardware_pikachu_animation.py` for the board playback/description test.
-
-On-board prototype checks passed animation playback, pausing for a description,
-and restoring the held frame before resuming. The measured integrated rate was
-approximately **2.1 frames/second**, below the GIF's intended 5–10 fps; playback
-is a feasibility test, not yet smooth game-speed animation. Minimum free heap
-in the instrumented test was 3,664 bytes. Six host tests passed. The static
-artwork archive is unchanged. The experiment is maintained in this separate repository, independently of the
-stable static PICODEX project.
+Animation provenance is in [`assets/animations/SOURCES.md`](assets/animations/SOURCES.md).
+Spanish descriptions retain per-entry translation provenance. Splash attribution
+is in `assets/splash/SOURCES.md`. Driver notices are preserved. Pokémon artwork,
+sprites, names and trademarks belong to their respective owners; no new license
+grant over upstream artwork is asserted.

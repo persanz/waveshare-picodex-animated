@@ -5,3 +5,6 @@ __pycache__/
 # Local hardware snapshots and translation-run output
 device-backups/
 description-sources/*.log
+
+# Reproducible downloaded sprite sources and build cache
+.cache/

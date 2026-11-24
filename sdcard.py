@@ -172,15 +172,17 @@ class SDCard:
     def readinto(self, buf):
         self.cs(0)
 
-        # read until start byte (0xff)
-        for i in range(_CMD_TIMEOUT):
+        # Clock response bytes continuously. Sleeping 1 ms after each filler
+        # byte made animation reads much slower than the card itself. Keep the
+        # same ~100 ms wall-clock timeout, including ticks_ms wraparound.
+        started = time.ticks_ms()
+        while True:
             self.spi.readinto(self.tokenbuf, 0xFF)
             if self.tokenbuf[0] == _TOKEN_DATA:
                 break
-            time.sleep_ms(1)
-        else:
-            self.cs(1)
-            raise OSError("timeout waiting for response")
+            if time.ticks_diff(time.ticks_ms(), started) >= _CMD_TIMEOUT:
+                self.cs(1)
+                raise OSError('timeout waiting for response')
 
         # read data
         mv = self.dummybuf_memoryview
