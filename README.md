@@ -73,6 +73,163 @@ missing. With all packs installed, every entry animates normally. Source and
 output hashes, exact form mapping and generated-motion flags are in
 [`assets/animations/manifest.json`](assets/animations/manifest.json).
 
+### Manual installation with Thonny and an SD-card reader
+
+These steps are for the **Waveshare RP2350-Touch-LCD-1.54**, not a bare Pico with
+no display, touch controller or SD slot. The ready-made `.mpy` files are included;
+you do not need to build them yourself. Use MicroPython **1.29 / mpy v6.3**. If the
+board already runs this project, keep its working firmware; reinstalling a UF2
+is not part of this file-copy procedure.
+
+#### 1. Download this version onto your computer
+
+On this repository's GitHub page, choose **Code → Download ZIP**, then extract it.
+Alternatively, clone the repository. Open the extracted project folder so you
+can see `main.py`, the compiled modules and `assets/animations/`.
+
+#### 2. Copy the large files to the microSD card
+
+Power off the board before removing its card. Put the microSD card into a card
+reader connected to the computer. Reuse its existing FAT32 filesystem; copying
+these files does not require formatting or deleting other content. Allow about
+**130 MiB free** for the artwork and animation packs.
+
+Using Finder, Windows Explorer or your file manager:
+
+1. At the **root of the card**, create `waveshare_pokemon_frame` if it is absent.
+2. Copy the repository's `pokemon_hd.dat` into that folder.
+3. At the **root of the card**, create `picodex_animations`.
+4. Open the repository's `assets/animations/` folder. Copy **all 13** files named
+   `pack-00.bin` through `pack-12.bin` into `picodex_animations`.
+5. Safely eject the card and put it back in the powered-off board.
+
+The final card layout must be exactly:
+
+```text
+microSD root/
+├── waveshare_pokemon_frame/
+│   └── pokemon_hd.dat
+└── picodex_animations/
+    ├── pack-00.bin
+    ├── pack-01.bin
+    ├── pack-02.bin
+    ├── pack-03.bin
+    ├── pack-04.bin
+    ├── pack-05.bin
+    ├── pack-06.bin
+    ├── pack-07.bin
+    ├── pack-08.bin
+    ├── pack-09.bin
+    ├── pack-10.bin
+    ├── pack-11.bin
+    └── pack-12.bin
+```
+
+Copy the **contents** of `assets/animations/`, not the whole repository hierarchy.
+There must not be an extra `assets/animations/` level on the card. The manifest
+and source notes are useful on the computer but are not required by the device.
+Do not copy `pokemon_hd.dat` or the animation packs into the Pico's internal
+flash; they are too large for it.
+
+#### 3. Connect Thonny and back up the current board files
+
+Install/open [Thonny](https://thonny.org/). Connect the board with a USB **data**
+cable. Select the **MicroPython (Raspberry Pi Pico)** interpreter and the board's
+serial port in Thonny's interpreter settings. If the port changes after a reset,
+select the new one.
+
+Open **View → Files**. The file browser shows your computer's files and the
+MicroPython device's files. In the device pane, select its root directory `/`.
+Right-click files there and use **Download** to save a backup on your computer,
+especially the existing `main.py` and any modules you will replace.
+
+Thonny's file-browser workflow is described in its
+[official MicroPython guide](https://github.com/thonny/thonny/wiki/MicroPython).
+A BOOTSEL/UF2 USB drive is for installing firmware, not for copying these game
+files. Use Thonny's device file browser for the internal flash.
+
+#### 4. Put the board in maintenance mode before uploading
+
+The running game uses a watchdog. Merely pressing Thonny's Stop button does not
+turn that watchdog off. Prepare the following command, press **Stop**, then paste
+it as **one line** into Thonny's Shell and press Enter:
+
+```python
+import os, machine; f = open('main.py', 'w'); f.write("from machine import Pin\nPin(28, Pin.OUT, value=1)\nprint('Maintenance mode')\n"); f.close(); os.sync(); machine.reset()
+```
+
+This temporarily replaces `main.py` with a tiny maintenance program and performs
+a full chip reset, clearing the watchdog. You should see `Maintenance mode`
+after reconnecting. The display may retain its previous image. The normal
+repository `main.py` will be restored in step 6; keep the backup from step 3.
+
+#### 5. Upload the small firmware files to the board root
+
+In Thonny's **computer** pane, open the extracted repository folder. Select these
+files, right-click and choose the **Upload** command with the **device root `/`**
+as the destination. Allow replacement of older copies you backed up.
+
+```text
+boot_splash.mpy
+boot_splash.dat
+lcd.mpy
+frame_app.mpy
+pokemon_footer.mpy
+pokemon_animation.mpy
+dex_description.mpy
+shutdown_screen.mpy
+sdcard.mpy
+pokemon_order.bin
+pokemon_dex.bin
+pokemon_descriptions_es.bin
+```
+
+Do **not** upload the application's `.py` source files in place of these compiled
+modules: they require more RAM, and an old `.py` can override a new `.mpy` with
+the same name. Back up and rename/remove old source copies of these modules if
+they are already on the board. An existing working Waveshare **`lcd.py` may stay**;
+keep that display driver if it already works on your board.
+
+The supplied module files must all be directly in `/`, not inside a project
+subfolder. You do not need the host build scripts, tests, JSON/Markdown databases,
+source GIFs, `.git` directory, or image previews on the Pico.
+
+#### 6. Restore the real main.py last, then restart
+
+After the other copies complete, upload the repository's **`main.py`** to the
+**device root**, replacing the temporary maintenance entry point. Check the
+file names and sizes in Thonny's device pane. For stronger verification, download
+copied files to a separate computer folder and compare their SHA-256 hashes with
+the originals. Expected animation-pack hashes are in `assets/animations/manifest.json`.
+On macOS/Linux use `shasum -a 256 filename`; on Windows PowerShell use
+`Get-FileHash filename -Algorithm SHA256`.
+
+Then run this in Thonny's Shell, or press the board's hardware RESET button:
+
+```python
+import machine
+machine.reset()
+```
+
+Expected result: **Pokémon splash with `Loading....` for five seconds → animated
+Bulbasaur**, with no menu and no charging popup. Try right/left browsing, hold the
+centre to read a description, then tap to return and resume animation. Thonny
+can be disconnected afterward; the files remain on the board.
+
+If an entry stays static, check all 13 SD packs and the two animation/entry
+modules `pokemon_animation.mpy` and `pokemon_footer.mpy`. If a module reports
+`incompatible .mpy`, check the firmware version. If you only see `Maintenance
+mode`, the final `main.py` has not yet replaced the temporary one.
+
+#### Returning to the static version
+
+The separate [waveshare-picodex repository](https://github.com/persanz/waveshare-picodex)
+contains the static version. Use its **own** root file list and compiled modules,
+following the same backup → maintenance → upload → `main.py` last procedure.
+Do not mix `frame_app.mpy` or `sdcard.mpy` from the two versions. Existing SD artwork
+can be reused. Animation packs can remain on the SD card for a later reinstall;
+the static firmware does not load them.
+
 ### Transfer over USB
 
 Use `uv tool run mpremote connect list` to find the port. Back up the device
