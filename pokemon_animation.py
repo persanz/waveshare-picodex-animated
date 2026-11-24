@@ -1,4 +1,5 @@
 """Indexed SD animation player: one row buffer, no second framebuffer."""
+import gc
 import struct
 import deflate
 import time
@@ -7,6 +8,7 @@ class Player:
     def __init__(self, lcd, index, directory='/sd/picodex_animations'):
         if index < 0:
             raise ValueError('Invalid animation index')
+        self.index = index
         self.file = open(directory+'/pack-%02d.bin' % (index//128), 'rb')
         try:
             magic, entries = struct.unpack('<4sH', self.file.read(6))
@@ -44,19 +46,23 @@ class Player:
         end = self.file.tell()+size
         if not size or end > self.end:
             raise ValueError('Invalid animation frame boundary')
+        gc.collect()
         stream = deflate.DeflateIO(self.file, deflate.RAW, 9)
-        if not 60 <= delay <= 2000:
-            raise ValueError('Invalid frame duration')
-        if self.first:
-            self.lcd.fill_rect(0, 0, 240, 216, 0)
-            self.first = False
-        length = len(self.row)
-        for y in range(self.height):
-            if stream.readinto(self.row) != len(self.row):
-                raise OSError('Incomplete animation row')
-            for dy in (0, 1, 2):
-                pos = ((self.y+y*3+dy)*240+self.x)*2
-                self.screen[pos:pos+length] = self.row
+        try:
+            if not 60 <= delay <= 2000:
+                raise ValueError('Invalid frame duration')
+            if self.first:
+                self.lcd.fill_rect(0, 0, 240, 216, 0)
+                self.first = False
+            length = len(self.row)
+            for y in range(self.height):
+                if stream.readinto(self.row) != len(self.row):
+                    raise OSError('Incomplete animation row')
+                for dy in (0, 1, 2):
+                    pos = ((self.y+y*3+dy)*240+self.x)*2
+                    self.screen[pos:pos+length] = self.row
+        finally:
+            stream.close()  # close=False leaves the underlying pack file open.
         del stream
         self.file.seek(end)
         self.lcd.show()

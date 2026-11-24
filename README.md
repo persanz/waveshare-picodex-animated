@@ -14,12 +14,15 @@ The entry count, form names, national numbering and Spanish descriptions are
 preserved. Female and other alternate artwork entries are mapped individually;
 missing forms are not replaced by another form's sprite.
 
+![Representative frames decoded from the animation packs](docs/animation-samples.png)
+
 ## Controls
 
 - Tap the left/right third of the screen, or short-press the left/right button,
   for the previous/next entry.
 - Hold the centre of the image for about one second to read its description.
-  Animation pauses while holding and reading. Tap through pages; the final tap
+  Animation pauses while holding and reading; the player is unloaded during
+  reading and restored at its saved frame position afterward. Tap through pages; the final tap
   restores the held frame and resumes playback.
 - Hold the right button for two seconds to return to the first Pokémon.
 - Move gently to choose another entry. Let the device settle before shaking again.
@@ -39,6 +42,7 @@ boot_splash.mpy
 boot_splash.dat
 lcd.mpy
 frame_app.mpy
+pokemon_footer.mpy
 pokemon_animation.mpy
 dex_description.mpy
 shutdown_screen.mpy
@@ -99,7 +103,7 @@ original artwork for that entry rather than freezing the whole catalog.
 Compile the firmware with MicroPython 1.29 mpy-cross:
 
 ```sh
-for module in boot_splash lcd frame_app pokemon_animation dex_description shutdown_screen sdcard; do
+for module in boot_splash lcd frame_app pokemon_footer pokemon_animation dex_description shutdown_screen sdcard; do
   uv tool run --from mpy-cross mpy-cross "$module.py"
 done
 python3 -m unittest discover -s tests -v
@@ -138,13 +142,41 @@ still depends on the sprite, card and display; it is not guaranteed to match the
 source GIF. The older Pikachu prototype measured about 2.1 fps before this change.
 
 The heap is limited: preserve `gc.threshold(1024)`, compile modules, and allocate
-the LCD framebuffer before loading the application. Description return uses a
-flash-backed snapshot to avoid re-decoding artwork on a low heap. Power handling
+the LCD framebuffer before loading the application. The footer renderer is loaded only when changing entries, then unloaded.
+Description return uses a flash-backed snapshot to avoid re-decoding artwork on
+a low heap; animation code and row buffers are released during reading and
+recreated at the saved playback position on return. Power handling
 runs before touch rendering, and shared I2C reads have a 50 ms timeout.
 
 Rebuild the Spanish description binary with `python3 build_descriptions.py`.
 Rebuild the splash with
 `uv run --with pillow --with resvg-py python build_boot_splash.py`.
+
+## Verification
+
+- Ten host tests pass, including pack bounds, colour layout, timing,
+  playback-position restoration, snapshot integrity and SD read timeouts.
+- All 1,538 animations and all 64,639 frames decode successfully and each entry
+  has at least two distinct frames.
+- All 13 packs were read back from the board SD card and matched SHA-256.
+- On-board tests passed for Bulbasaur, Pikachu, Mega Charizard X, female Frillish,
+  Spiky-Eared Pichu, Pecharunt and Mega female Meowstic. Each test checks playback,
+  the held-frame checksum on description return, and continued playback.
+- Repeated browsing across 12 entries, including Mega/Gigantamax forms, passed.
+- Shutdown reaches the power latch even with simulated touch-read failures.
+- Normal startup was observed: 5,003 ms Pokémon splash, then animated Bulbasaur,
+  without a menu or charging popup.
+
+Sampled frame rates ranged from about **1.6 to 5.4 fps**; animations are not
+universally smooth or guaranteed to match their original GIF rate. Minimum free
+heap in the instrumented seven-entry test was 4,080 bytes. The test inputs are
+simulated; physical touch feel and battery power cutoff still need owner use.
+
+For hardware checks, compile and upload `tests/hardware_catalog.py`, then invoke
+`hardware_catalog.run(order_index)` via mpremote. `tests/hardware_browsing.py` and
+`tests/hardware_description_shutdown.py` exercise navigation and shutdown.
+The private `_probe` callback is only for validation; normal startup does not use
+it. Restore/restart the ordinary main entry point after a diagnostic session.
 
 ## Sources and rights
 

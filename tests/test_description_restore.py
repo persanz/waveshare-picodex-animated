@@ -22,7 +22,7 @@ def factory(lcd, os):
  return cache_artwork, restore_artwork, is_reading
 ''')
         factory.body[0].body[1:1] = helpers
-        namespace = {}
+        namespace = {'_probe': None}
         exec(compile(ast.fix_missing_locations(factory), '<snapshot-helpers>', 'exec'), namespace)
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)

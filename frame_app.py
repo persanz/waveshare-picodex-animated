@@ -1,7 +1,7 @@
 import time
 from machine import Pin, SPI, I2C
 
-def start(lcd, power, button, initial_index=0):
+def start(lcd, power, button, initial_index=0, _probe=None):
     import os
     import struct
     import deflate
@@ -46,12 +46,39 @@ def start(lcd, power, button, initial_index=0):
 
 
     animation = None
+    animation_resume = None
 
     current_art_id = 0
     current_name = ''
     description_open = False
     description_page = 0
     description_pages = 1
+
+    def pause_animation():
+        nonlocal animation, animation_resume
+        if animation is not None:
+            animation_resume = (animation.index, animation.frame, animation.file.tell())
+            animation.close()
+            animation = None
+        import sys
+        import gc
+        if 'pokemon_animation' in sys.modules:
+            del sys.modules['pokemon_animation']
+        gc.collect()
+
+    def resume_animation():
+        nonlocal animation, animation_resume
+        state = animation_resume
+        animation_resume = None
+        if state is not None:
+            import gc
+            gc.collect()
+            from pokemon_animation import Player
+            animation = Player(lcd, state[0])
+            animation.frame = state[1]
+            animation.file.seek(state[2])
+            animation.first = False
+            gc.collect()
 
     def cache_artwork():
         # Save artwork without allocating a second framebuffer.
@@ -67,9 +94,12 @@ def start(lcd, power, button, initial_index=0):
         lcd.show()
         description_open = False
         os.remove('/picodex-return.tmp')
+        if _probe is not None:
+            _probe('return')
 
     def show_sprite(index, static_only=False):
-        nonlocal current_art_id, current_name, description_open, animation
+        nonlocal current_art_id, current_name, description_open, animation, animation_resume
+        animation_resume = None
         if animation is not None:
             animation.close()
             animation = None
@@ -95,6 +125,7 @@ def start(lcd, power, button, initial_index=0):
                     animation = Player(lcd, index)
                     del Player
                 except (OSError, ValueError, MemoryError) as e:
+                    Player = None
                     animation = None
                     if 'pokemon_animation' in sys.modules:
                         del sys.modules['pokemon_animation']
@@ -114,44 +145,11 @@ def start(lcd, power, button, initial_index=0):
                     start = row*W*2
                     screen[start:start+W*2] = source
                 del stream, screen, source
-            # Draw a footer band with the Pokémon number (white) before the name (orange).
-            lcd.fill_rect(0, 216, 240, 24, BLACK)
-            # Form IDs above 10000 are PokeAPI identifiers, not Pokédex numbers.
-            if number >= 10000:
-                try:
-                    with open('/pokemon_dex.bin', 'rb') as dex:
-                        dex.seek((number - 10000) * 2)
-                        entry = dex.read(2)
-                    number = struct.unpack('<H', entry)[0] if len(entry) == 2 else 0
-                except OSError:
-                    number = 0
-            num_label = str(number) if number else '?'
-            max_chars = 30  # 240px / 8px font
-            if name:
-                total = len(num_label) + 1 + len(name)
-                if total <= max_chars:
-                    # number before name on one centred line, different colours
-                    start_x = (240 - total*8) // 2
-                    lcd.text(num_label, start_x, 224, WHITE)
-                    lcd.text(name, start_x + len(num_label)*8 + 8, 224, ORANGE)
-                else:
-                    # long name: number on its own line, name centred below
-                    words = name.split(' ')
-                    line1 = ''
-                    for w in words:
-                        if len((line1 + ' ' + w).strip()) <= max_chars:
-                            line1 = (line1 + ' ' + w).strip()
-                        else:
-                            break
-                    rest = name[len(line1):].strip()
-                    line2 = rest if len(rest) <= max_chars else rest[:max_chars-1] + '…'
-                    lcd.text(num_label, (240 - len(num_label)*8)//2, 218, WHITE)
-                    lcd.text(line1, (240 - len(line1)*8)//2, 224, ORANGE)
-                    if line2:
-                        lcd.text(line2, (240 - len(line2)*8)//2, 232, ORANGE)
-            else:
-                lcd.text(num_label, (240 - len(num_label)*8)//2, 224, WHITE)
-            lcd.show()
+            from pokemon_footer import draw as draw_footer
+            number = draw_footer(lcd, number, name)
+            del sys.modules['pokemon_footer']
+            del draw_footer
+            gc.collect()
         description_open = False
         print('Displaying Pokemon', number, name)
         if animation is not None:
@@ -346,7 +344,10 @@ def start(lcd, power, button, initial_index=0):
                             elif time.ticks_diff(now, touch_since) >= 800:
                                 import gc
                                 gc.collect()
+                                if _probe is not None:
+                                    _probe('pause')
                                 cache_artwork()
+                                pause_animation()
                                 from dex_description import show as show_description
                                 description_page = 0
                                 description_pages = show_description(lcd, current_art_id, current_name)
@@ -367,9 +368,12 @@ def start(lcd, power, button, initial_index=0):
                 except OSError:
                     touch_down = False
 
+            if animation_resume is not None and not description_open and not touch_down:
+                resume_animation()
             if animation is not None and not description_open and not touch_down:
                 try:
-                    animation.step(now)
+                    if animation.step(now) and _probe is not None:
+                        _probe('frame')
                 except (OSError, ValueError, MemoryError) as e:
                     print('Animation error; using static artwork:', e)
                     show_sprite(index, static_only=True)
